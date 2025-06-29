@@ -7,8 +7,8 @@ I'm hoping to have v6 available soon, which will include both these changes as w
 
 ### ✨ Features
 
-- Improve the flexibility of T type, KdTree.size. Add generate nearest_one_point (@pjkundert)
-- Fix broken test of custom struct as T. Add test for () as T (@pjkundert)
+- Improve the flexibility of T type, KdTree.size. Add generate nearest_one_point (https://github.com/sdd/kiddo/pull/214, @pjkundert)
+- Fix broken test of custom struct as T. Add test for `()` as T (https://github.com/sdd/kiddo/pull/243 @pjkundert)
 
 ## [5.2.4] - 2026-01-01 (Happy New Year! 🎉)
 
@@ -37,7 +37,7 @@ I'm hoping to have v6 available soon, which will include both these changes as w
 - Update ad-m/github-push-action action to v1
 - Update rust crate rstest to 0.26
 - Update rust crate codspeed-criterion-compat to v4
- 
+
 ### Ci
 
 - Update CI workflow triggers to include PR and workflow_dispatch
@@ -56,7 +56,10 @@ I'm hoping to have v6 available soon, which will include both these changes as w
 
 ## [5.2.2] - 2025-06-30
 
-- Lifetime Flexibility for within_unsorted_iter + Owned Query Variant (@KvA2KLvAST)
+### ♻️ Refactor
+
+- refactor `within_unsorted_iter` to decouple the lifetime of the iterator from that of the query by
+  copying `query` once at the start of the call (@KvA2KLvAST)
 
 ## [5.2.1] - 2025-06-29
 
