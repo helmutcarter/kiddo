@@ -110,8 +110,8 @@ pub mod traits;
 mod iter;
 
 /// Stem Orderings
-pub mod stem_orderings;
-pub use traits::StemOrdering;
+pub mod stem_strategies;
+pub use traits::StemStrategy;
 
 #[doc(hidden)]
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
@@ -145,6 +145,6 @@ pub use distance::float::Manhattan;
 pub use distance::float::SquaredEuclidean;
 pub use nearest_neighbour::NearestNeighbour;
 
-pub use crate::stem_orderings::Eytzinger;
+pub use crate::stem_strategies::Eytzinger;
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 pub use within_unsorted_iter::WithinUnsortedIter;
