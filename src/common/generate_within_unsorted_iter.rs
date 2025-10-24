@@ -2,8 +2,7 @@
 #[macro_export]
 macro_rules! generate_within_unsorted_iter {
     ($comments:tt) => {
-        doc_comment! {
-            concat!$comments,
+            #[doc = concat!$comments]
             #[inline]
             pub fn within_unsorted_iter<D>(
                 &'a self,
@@ -121,6 +120,5 @@ macro_rules! generate_within_unsorted_iter {
 
                 gen_scope
             }
-        }
     };
 }
