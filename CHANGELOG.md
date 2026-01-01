@@ -10,6 +10,12 @@ I'm hoping to have v6 available soon, which will include both these changes as w
 - Improve the flexibility of T type, KdTree.size. Add generate nearest_one_point (@pjkundert)
 - Fix broken test of custom struct as T. Add test for () as T (@pjkundert)
 
+## [5.2.4] - 2026-01-01 (Happy New Year! 🎉)
+
+### Deps
+
+- update cmov dep from 0.3 to 0.4 after 0.3 got yanked (see https://github.com/RustCrypto/utils/issues/1304). Thanks @yuby and @jqnatividad
+
 ## [5.2.3] - 2025-12-08
 
 ### 🐛 Bug Fixes
