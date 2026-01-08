@@ -1,7 +1,13 @@
 //! Donnelly SIMD + Prefetch Stem Strategy
 
+#[cfg(target_arch = "x86_64")]
 use crate::stem_strategies::donnelly_2_blockmarker_simd::avx2_impl::{
     compare_block3_f32_avx2, compare_block3_f64_avx2, compare_block4_f32_avx2,
+};
+
+#[cfg(target_arch = "aarch64")]
+use crate::stem_strategies::donnelly_2_blockmarker_simd::neon_impl::{
+    compare_block3_f32_neon, compare_block3_f64_neon, compare_block4_f32_neon,
 };
 use crate::stem_strategies::donnelly_core::DonnellyCore;
 use crate::stem_strategies::{Block3, Block4, BlockSizeMarker};
@@ -27,9 +33,10 @@ pub struct DonnellyMarkerSimd<BS: BlockSizeMarker, const CL: u32, const VB: u32,
     _marker: PhantomData<BS>,
 }
 
-// x86_64 3-level (eg with f64)
-// (All x86_64 processors have a cache line size of 64 bytes)
-#[cfg(target_arch = "x86_64")]
+// 3-level (eg with f64)
+// x86_64: All x86_64 processors have a cache line size of 64 bytes
+// aarch64: Apple M1/M2/M3 have a cache line size of 128 bytes, but we use 64 for compatibility
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 impl<const VB: u32, const K: usize> StemStrategy for DonnellyMarkerSimd<Block3, 64, VB, K> {
     const ROOT_IDX: usize = 0;
     const BLOCK_SIZE: usize = 3;
@@ -193,6 +200,17 @@ impl<const VB: u32, const K: usize> StemStrategy for DonnellyMarkerSimd<Block3, 
                     unsafe { std::mem::transmute_copy(&best_dist_f64) },
                 )
             }
+            #[cfg(target_arch = "aarch64")]
+            {
+                D::simd_backtrack_check_block3_f64_avx2(
+                    unsafe { std::mem::transmute_copy(&query_wide_f64) },
+                    stems_ptr.as_ptr(),
+                    block_base_idx,
+                    unsafe { std::mem::transmute_copy(&old_off_f64) },
+                    unsafe { std::mem::transmute_copy(&rd_f64) },
+                    unsafe { std::mem::transmute_copy(&best_dist_f64) },
+                )
+            }
         } else if std::mem::size_of::<A>() == 4 {
             // f32 path
             let query_wide_f32: f32 = unsafe { std::mem::transmute_copy(&query_wide_val) };
@@ -212,6 +230,17 @@ impl<const VB: u32, const K: usize> StemStrategy for DonnellyMarkerSimd<Block3, 
                 )
             }
             #[cfg(all(target_arch = "x86_64", not(target_feature = "avx512f")))]
+            {
+                D::simd_backtrack_check_block3_f32_avx2(
+                    unsafe { std::mem::transmute_copy(&query_wide_f32) },
+                    stems_ptr.as_ptr(),
+                    block_base_idx,
+                    unsafe { std::mem::transmute_copy(&old_off_f32) },
+                    unsafe { std::mem::transmute_copy(&rd_f32) },
+                    unsafe { std::mem::transmute_copy(&best_dist_f32) },
+                )
+            }
+            #[cfg(target_arch = "aarch64")]
             {
                 D::simd_backtrack_check_block3_f32_avx2(
                     unsafe { std::mem::transmute_copy(&query_wide_f32) },
@@ -304,9 +333,10 @@ impl<const VB: u32, const K: usize> StemStrategy for DonnellyMarkerSimd<Block3, 
     }
 }
 
-// x86_64 4-level (eg with f32)
-// (All x86_64 processors have a cache line size of 64 bytes)
-#[cfg(target_arch = "x86_64")]
+// 4-level (eg with f32)
+// x86_64: All x86_64 processors have a cache line size of 64 bytes
+// aarch64: Apple M1/M2/M3 have a cache line size of 128 bytes, but we use 64 for compatibility
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
 impl<const VB: u32, const K: usize> StemStrategy for DonnellyMarkerSimd<Block4, 64, VB, K> {
     const ROOT_IDX: usize = 0;
     const BLOCK_SIZE: usize = 4;
@@ -469,6 +499,17 @@ impl<const VB: u32, const K: usize> StemStrategy for DonnellyMarkerSimd<Block4, 
                     unsafe { std::mem::transmute_copy(&best_dist_f64) },
                 )
             }
+            #[cfg(target_arch = "aarch64")]
+            {
+                D::simd_backtrack_check_block4_f64_avx2(
+                    unsafe { std::mem::transmute_copy(&query_wide_f64) },
+                    stems_ptr.as_ptr(),
+                    block_base_idx,
+                    unsafe { std::mem::transmute_copy(&old_off_f64) },
+                    unsafe { std::mem::transmute_copy(&rd_f64) },
+                    unsafe { std::mem::transmute_copy(&best_dist_f64) },
+                )
+            }
         } else if std::mem::size_of::<A>() == 4 {
             // f32 path
             let query_wide_f32: f32 = unsafe { std::mem::transmute_copy(&query_wide_val) };
@@ -488,6 +529,17 @@ impl<const VB: u32, const K: usize> StemStrategy for DonnellyMarkerSimd<Block4, 
                 )
             }
             #[cfg(all(target_arch = "x86_64", not(target_feature = "avx512f")))]
+            {
+                D::simd_backtrack_check_block4_f32_avx2(
+                    unsafe { std::mem::transmute_copy(&query_wide_f32) },
+                    stems_ptr.as_ptr(),
+                    block_base_idx,
+                    unsafe { std::mem::transmute_copy(&old_off_f32) },
+                    unsafe { std::mem::transmute_copy(&rd_f32) },
+                    unsafe { std::mem::transmute_copy(&best_dist_f32) },
+                )
+            }
+            #[cfg(target_arch = "aarch64")]
             {
                 D::simd_backtrack_check_block4_f32_avx2(
                     unsafe { std::mem::transmute_copy(&query_wide_f32) },
@@ -648,9 +700,14 @@ impl<T: AxisUnified> CompareBlock3 for T {
                 unsafe { compare_block3_f64_avx2(stems_ptr, block_base_idx, query_f64) }
             }
 
-            #[cfg(not(target_arch = "x86_64"))]
+            #[cfg(target_arch = "aarch64")]
             {
-                panic!("DonnellyMarkerSimd requires x86_64 with AVX2")
+                unsafe { compare_block3_f64_neon(stems_ptr, block_base_idx, query_f64) }
+            }
+
+            #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+            {
+                panic!("DonnellyMarkerSimd requires x86_64 with AVX2 or aarch64 with NEON")
             }
         } else if std::mem::size_of::<Self>() == 4 {
             // f32 path
@@ -666,9 +723,14 @@ impl<T: AxisUnified> CompareBlock3 for T {
                 unsafe { compare_block3_f32_avx2(stems_ptr, block_base_idx, query_f32) }
             }
 
-            #[cfg(not(target_arch = "x86_64"))]
+            #[cfg(target_arch = "aarch64")]
             {
-                panic!("DonnellyMarkerSimd requires x86_64 with AVX2")
+                unsafe { compare_block3_f32_neon(stems_ptr, block_base_idx, query_f32) }
+            }
+
+            #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+            {
+                panic!("DonnellyMarkerSimd requires x86_64 with AVX2 or aarch64 with NEON")
             }
         } else {
             panic!(
@@ -757,6 +819,193 @@ mod avx2_impl {
     }
 }
 
+#[cfg(target_arch = "aarch64")]
+mod neon_impl {
+    use std::ptr::NonNull;
+
+    #[target_feature(enable = "neon")]
+    #[inline(always)]
+    pub unsafe fn compare_block3_f64_neon(
+        stems_ptr: NonNull<u8>,
+        cache_line_base: usize,
+        query_val: f64,
+    ) -> u8 {
+        use std::arch::aarch64::*;
+
+        let ptr = stems_ptr.as_ptr().add(cache_line_base * 8) as *const f64;
+        let query_vec = vdupq_n_f64(query_val);
+
+        // Load 8 f64 values using 4 NEON 128-bit vectors
+        let pivots_0 = vld1q_f64(ptr);
+        let pivots_1 = vld1q_f64(ptr.add(2));
+        let pivots_2 = vld1q_f64(ptr.add(4));
+        let pivots_3 = vld1q_f64(ptr.add(6));
+
+        // Compare: query >= pivot (returns uint64x2_t with all 1s or all 0s per lane)
+        let cmp_0 = vcgeq_f64(query_vec, pivots_0);
+        let cmp_1 = vcgeq_f64(query_vec, pivots_1);
+        let cmp_2 = vcgeq_f64(query_vec, pivots_2);
+        let cmp_3 = vcgeq_f64(query_vec, pivots_3);
+
+        // Extract comparison results - cmp_* are already uint64x2_t
+        let mut mask = 0u8;
+        if vgetq_lane_u64(cmp_0, 0) != 0 {
+            mask += 1;
+        }
+        if vgetq_lane_u64(cmp_0, 1) != 0 {
+            mask += 1;
+        }
+        if vgetq_lane_u64(cmp_1, 0) != 0 {
+            mask += 1;
+        }
+        if vgetq_lane_u64(cmp_1, 1) != 0 {
+            mask += 1;
+        }
+        if vgetq_lane_u64(cmp_2, 0) != 0 {
+            mask += 1;
+        }
+        if vgetq_lane_u64(cmp_2, 1) != 0 {
+            mask += 1;
+        }
+        if vgetq_lane_u64(cmp_3, 0) != 0 {
+            mask += 1;
+        }
+        if vgetq_lane_u64(cmp_3, 1) != 0 {
+            mask += 1;
+        }
+
+        mask
+    }
+
+    #[target_feature(enable = "neon")]
+    #[inline(always)]
+    pub unsafe fn compare_block3_f32_neon(
+        stems_ptr: NonNull<u8>,
+        cache_line_base: usize,
+        query_val: f32,
+    ) -> u8 {
+        use std::arch::aarch64::*;
+
+        let ptr = stems_ptr.as_ptr().add(cache_line_base * 4) as *const f32;
+        let query_vec = vdupq_n_f32(query_val);
+
+        // Load 8 f32 values using 2 NEON 128-bit vectors
+        let pivots_low = vld1q_f32(ptr);
+        let pivots_high = vld1q_f32(ptr.add(4));
+
+        // Compare: query >= pivot (returns uint32x4_t with all 1s or all 0s per lane)
+        let cmp_low = vcgeq_f32(query_vec, pivots_low);
+        let cmp_high = vcgeq_f32(query_vec, pivots_high);
+
+        // Extract comparison results - cmp_* are already uint32x4_t
+        let mut mask = 0u8;
+        if vgetq_lane_u32(cmp_low, 0) != 0 {
+            mask += 1;
+        }
+        if vgetq_lane_u32(cmp_low, 1) != 0 {
+            mask += 1;
+        }
+        if vgetq_lane_u32(cmp_low, 2) != 0 {
+            mask += 1;
+        }
+        if vgetq_lane_u32(cmp_low, 3) != 0 {
+            mask += 1;
+        }
+        if vgetq_lane_u32(cmp_high, 0) != 0 {
+            mask += 1;
+        }
+        if vgetq_lane_u32(cmp_high, 1) != 0 {
+            mask += 1;
+        }
+        if vgetq_lane_u32(cmp_high, 2) != 0 {
+            mask += 1;
+        }
+        if vgetq_lane_u32(cmp_high, 3) != 0 {
+            mask += 1;
+        }
+
+        mask
+    }
+
+    #[target_feature(enable = "neon")]
+    #[inline(always)]
+    pub unsafe fn compare_block4_f32_neon(
+        stems_ptr: NonNull<u8>,
+        cache_line_base: usize,
+        query_val: f32,
+    ) -> u8 {
+        use std::arch::aarch64::*;
+
+        let ptr = stems_ptr.as_ptr().add(cache_line_base * 4) as *const f32;
+        let query_vec = vdupq_n_f32(query_val);
+
+        // Load 16 f32 values using 4 NEON 128-bit vectors
+        let pivots_0 = vld1q_f32(ptr);
+        let pivots_1 = vld1q_f32(ptr.add(4));
+        let pivots_2 = vld1q_f32(ptr.add(8));
+        let pivots_3 = vld1q_f32(ptr.add(12));
+
+        // Compare: query >= pivot (returns uint32x4_t with all 1s or all 0s per lane)
+        let cmp_0 = vcgeq_f32(query_vec, pivots_0);
+        let cmp_1 = vcgeq_f32(query_vec, pivots_1);
+        let cmp_2 = vcgeq_f32(query_vec, pivots_2);
+        let cmp_3 = vcgeq_f32(query_vec, pivots_3);
+
+        // Extract comparison results - cmp_* are already uint32x4_t
+        let mut mask = 0u8;
+        if vgetq_lane_u32(cmp_0, 0) != 0 {
+            mask += 1;
+        }
+        if vgetq_lane_u32(cmp_0, 1) != 0 {
+            mask += 1;
+        }
+        if vgetq_lane_u32(cmp_0, 2) != 0 {
+            mask += 1;
+        }
+        if vgetq_lane_u32(cmp_0, 3) != 0 {
+            mask += 1;
+        }
+        if vgetq_lane_u32(cmp_1, 0) != 0 {
+            mask += 1;
+        }
+        if vgetq_lane_u32(cmp_1, 1) != 0 {
+            mask += 1;
+        }
+        if vgetq_lane_u32(cmp_1, 2) != 0 {
+            mask += 1;
+        }
+        if vgetq_lane_u32(cmp_1, 3) != 0 {
+            mask += 1;
+        }
+        if vgetq_lane_u32(cmp_2, 0) != 0 {
+            mask += 1;
+        }
+        if vgetq_lane_u32(cmp_2, 1) != 0 {
+            mask += 1;
+        }
+        if vgetq_lane_u32(cmp_2, 2) != 0 {
+            mask += 1;
+        }
+        if vgetq_lane_u32(cmp_2, 3) != 0 {
+            mask += 1;
+        }
+        if vgetq_lane_u32(cmp_3, 0) != 0 {
+            mask += 1;
+        }
+        if vgetq_lane_u32(cmp_3, 1) != 0 {
+            mask += 1;
+        }
+        if vgetq_lane_u32(cmp_3, 2) != 0 {
+            mask += 1;
+        }
+        if vgetq_lane_u32(cmp_3, 3) != 0 {
+            mask += 1;
+        }
+
+        mask
+    }
+}
+
 #[cfg(all(target_arch = "x86_64", target_feature = "avx512f"))]
 mod avx512_impl {
     #[target_feature(enable = "avx512f,avx512vl,popcnt")]
@@ -841,9 +1090,14 @@ impl<T: AxisUnified> CompareBlock4 for T {
                 unsafe { compare_block4_f32_avx2(stems_ptr, block_base_idx, query_f32) }
             }
 
-            #[cfg(not(target_arch = "x86_64"))]
+            #[cfg(target_arch = "aarch64")]
             {
-                panic!("DonnellyMarkerSimd requires x86_64 with AVX2")
+                unsafe { compare_block4_f32_neon(stems_ptr, block_base_idx, query_f32) }
+            }
+
+            #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+            {
+                panic!("DonnellyMarkerSimd requires x86_64 with AVX2 or aarch64 with NEON")
             }
         } else {
             panic!(
@@ -852,6 +1106,127 @@ impl<T: AxisUnified> CompareBlock4 for T {
                 std::any::type_name::<Self>(),
                 std::mem::size_of::<Self>()
             )
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[cfg(target_arch = "aarch64")]
+    mod neon_tests {
+        use super::*;
+
+        #[test]
+        fn test_compare_block3_f64_neon() {
+            // Create a block of 8 f64 values representing pivots
+            let pivots: [f64; 8] = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
+            let stems_ptr = NonNull::new(pivots.as_ptr() as *mut u8).unwrap();
+
+            // Test query value that is less than all pivots
+            let result = unsafe { neon_impl::compare_block3_f64_neon(stems_ptr, 0, 0.5) };
+            assert_eq!(result, 0, "Query 0.5 should be less than all pivots");
+
+            // Test query value that is greater than all pivots
+            let result = unsafe { neon_impl::compare_block3_f64_neon(stems_ptr, 0, 10.0) };
+            assert_eq!(result, 8, "Query 10.0 should be >= all 8 pivots");
+
+            // Test query value in the middle
+            let result = unsafe { neon_impl::compare_block3_f64_neon(stems_ptr, 0, 4.5) };
+            assert_eq!(result, 4, "Query 4.5 should be >= first 4 pivots");
+
+            // Test query value exactly equal to a pivot
+            let result = unsafe { neon_impl::compare_block3_f64_neon(stems_ptr, 0, 5.0) };
+            assert_eq!(result, 5, "Query 5.0 should be >= first 5 pivots");
+
+            // Test query at boundary
+            let result = unsafe { neon_impl::compare_block3_f64_neon(stems_ptr, 0, 1.0) };
+            assert_eq!(result, 1, "Query 1.0 should be >= first pivot");
+        }
+
+        #[test]
+        fn test_compare_block3_f32_neon() {
+            // Create a block of 8 f32 values representing pivots
+            let pivots: [f32; 8] = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
+            let stems_ptr = NonNull::new(pivots.as_ptr() as *mut u8).unwrap();
+
+            // Test query value that is less than all pivots
+            let result = unsafe { neon_impl::compare_block3_f32_neon(stems_ptr, 0, 0.5) };
+            assert_eq!(result, 0, "Query 0.5 should be less than all pivots");
+
+            // Test query value that is greater than all pivots
+            let result = unsafe { neon_impl::compare_block3_f32_neon(stems_ptr, 0, 10.0) };
+            assert_eq!(result, 8, "Query 10.0 should be >= all 8 pivots");
+
+            // Test query value in the middle
+            let result = unsafe { neon_impl::compare_block3_f32_neon(stems_ptr, 0, 4.5) };
+            assert_eq!(result, 4, "Query 4.5 should be >= first 4 pivots");
+
+            // Test query value exactly equal to a pivot
+            let result = unsafe { neon_impl::compare_block3_f32_neon(stems_ptr, 0, 5.0) };
+            assert_eq!(result, 5, "Query 5.0 should be >= first 5 pivots");
+
+            // Test query at boundary
+            let result = unsafe { neon_impl::compare_block3_f32_neon(stems_ptr, 0, 1.0) };
+            assert_eq!(result, 1, "Query 1.0 should be >= first pivot");
+
+            // Test with negative values
+            let neg_pivots: [f32; 8] = [-4.0, -3.0, -2.0, -1.0, 0.0, 1.0, 2.0, 3.0];
+            let neg_stems_ptr = NonNull::new(neg_pivots.as_ptr() as *mut u8).unwrap();
+            let result = unsafe { neon_impl::compare_block3_f32_neon(neg_stems_ptr, 0, -1.5) };
+            assert_eq!(result, 3, "Query -1.5 should be >= first 3 pivots");
+        }
+
+        #[test]
+        fn test_compare_block4_f32_neon() {
+            // Create a block of 16 f32 values representing pivots
+            let pivots: [f32; 16] = [
+                1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0,
+                16.0,
+            ];
+            let stems_ptr = NonNull::new(pivots.as_ptr() as *mut u8).unwrap();
+
+            // Test query value that is less than all pivots
+            let result = unsafe { neon_impl::compare_block4_f32_neon(stems_ptr, 0, 0.5) };
+            assert_eq!(result, 0, "Query 0.5 should be less than all pivots");
+
+            // Test query value that is greater than all pivots
+            let result = unsafe { neon_impl::compare_block4_f32_neon(stems_ptr, 0, 20.0) };
+            assert_eq!(result, 16, "Query 20.0 should be >= all 16 pivots");
+
+            // Test query value in the middle
+            let result = unsafe { neon_impl::compare_block4_f32_neon(stems_ptr, 0, 8.5) };
+            assert_eq!(result, 8, "Query 8.5 should be >= first 8 pivots");
+
+            // Test query value exactly equal to a pivot
+            let result = unsafe { neon_impl::compare_block4_f32_neon(stems_ptr, 0, 10.0) };
+            assert_eq!(result, 10, "Query 10.0 should be >= first 10 pivots");
+
+            // Test query at boundary
+            let result = unsafe { neon_impl::compare_block4_f32_neon(stems_ptr, 0, 1.0) };
+            assert_eq!(result, 1, "Query 1.0 should be >= first pivot");
+
+            // Test with fractional values
+            let result = unsafe { neon_impl::compare_block4_f32_neon(stems_ptr, 0, 12.7) };
+            assert_eq!(result, 12, "Query 12.7 should be >= first 12 pivots");
+        }
+
+        #[test]
+        fn test_compare_block3_f64_neon_with_offset() {
+            // Create a larger array and test with non-zero cache_line_base
+            let pivots: [f64; 16] = [
+                0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0,
+                80.0,
+            ];
+            let stems_ptr = NonNull::new(pivots.as_ptr() as *mut u8).unwrap();
+
+            // Test with cache_line_base = 8 (accessing second block)
+            let result = unsafe { neon_impl::compare_block3_f64_neon(stems_ptr, 8, 45.0) };
+            assert_eq!(
+                result, 4,
+                "Query 45.0 should be >= first 4 pivots in second block"
+            );
         }
     }
 }

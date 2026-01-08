@@ -428,7 +428,8 @@ where
 
             debug_assert!(
                 right_capacity >= chunk_length.saturating_sub(pivot),
-                "right_capacity ({right_capacity}) should be greater than chunk_length - pivot ({chunk_length} - {pivot})"
+                "right_capacity ({right_capacity}) should be greater than chunk_length - pivot ({chunk_length} - {pivot} = {})",
+                chunk_length - pivot,
             );
 
             stems[stem_index] = source[sort_index[pivot]][dim];
@@ -497,6 +498,11 @@ where
         if pivot == 0 {
             return pivot;
         }
+
+        // TODO: the logic here is not quite right. If we have to nudge left to the point where
+        // .     the pivot would result in more items being in the right child than would fit,
+        // .     we need to instead reset the pivot to the middle and try again, but nudging right.
+        // .
 
         // if the pivot straddles two values that are equal, keep nudging it left until they aren't
         while source[sort_index[pivot]][dim] == source[sort_index[pivot - 1]][dim] && pivot > 1 {

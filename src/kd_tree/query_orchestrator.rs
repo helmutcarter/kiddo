@@ -482,7 +482,6 @@ where
             //     6      |  0.750 <= x < 0.875 |      6
             //     7      |  0.875 <= x         |
 
-
             // Map pivot idx to child idx by permuting the mask
 
             // Source: https://programming.sirrida.de/calcperm.php
@@ -517,5 +516,137 @@ where
 
             mask & sibling_mask
         }
+    }
+
+    // ARM NEON implementation for f64
+    #[cfg(all(feature = "simd", target_arch = "aarch64", target_feature = "neon"))]
+    #[inline(always)]
+    fn simd_prune_block_f64(rd_values: &[f64; 8], max_dist: f64, sibling_mask: u8) -> u8 {
+        unsafe {
+            use std::arch::aarch64::*;
+
+            let max_dist_vec = vdupq_n_f64(max_dist);
+
+            // Process first 4 elements (2x float64x2_t vectors)
+            let rd_0 = vld1q_f64(rd_values.as_ptr());
+            let rd_1 = vld1q_f64(rd_values.as_ptr().add(2));
+            let cmp_0 = vcleq_f64(rd_0, max_dist_vec);
+            let cmp_1 = vcleq_f64(rd_1, max_dist_vec);
+
+            // Process second 4 elements
+            let rd_2 = vld1q_f64(rd_values.as_ptr().add(4));
+            let rd_3 = vld1q_f64(rd_values.as_ptr().add(6));
+            let cmp_2 = vcleq_f64(rd_2, max_dist_vec);
+            let cmp_3 = vcleq_f64(rd_3, max_dist_vec);
+
+            // Extract bits: cmp_* are already uint64x2_t with all 1s or all 0s per lane
+            let mut mask = 0u8;
+            if vgetq_lane_u64(cmp_0, 0) != 0 {
+                mask |= 1 << 0;
+            }
+            if vgetq_lane_u64(cmp_0, 1) != 0 {
+                mask |= 1 << 1;
+            }
+            if vgetq_lane_u64(cmp_1, 0) != 0 {
+                mask |= 1 << 2;
+            }
+            if vgetq_lane_u64(cmp_1, 1) != 0 {
+                mask |= 1 << 3;
+            }
+            if vgetq_lane_u64(cmp_2, 0) != 0 {
+                mask |= 1 << 4;
+            }
+            if vgetq_lane_u64(cmp_2, 1) != 0 {
+                mask |= 1 << 5;
+            }
+            if vgetq_lane_u64(cmp_3, 0) != 0 {
+                mask |= 1 << 6;
+            }
+            if vgetq_lane_u64(cmp_3, 1) != 0 {
+                mask |= 1 << 7;
+            }
+
+            mask & sibling_mask
+        }
+    }
+
+    // ARM NEON implementation for f32
+    #[cfg(all(feature = "simd", target_arch = "aarch64", target_feature = "neon"))]
+    #[inline(always)]
+    fn simd_prune_block_f32(rd_values: &[f32; 8], max_dist: f32, sibling_mask: u8) -> u8 {
+        unsafe {
+            use std::arch::aarch64::*;
+
+            let max_dist_vec = vdupq_n_f32(max_dist);
+
+            // Process all 8 elements (2x float32x4_t vectors)
+            let rd_low = vld1q_f32(rd_values.as_ptr());
+            let rd_high = vld1q_f32(rd_values.as_ptr().add(4));
+
+            let cmp_low = vcleq_f32(rd_low, max_dist_vec);
+            let cmp_high = vcleq_f32(rd_high, max_dist_vec);
+
+            // Extract bits: cmp_* are already uint32x4_t with all 1s or all 0s per lane
+            let mut mask = 0u8;
+            if vgetq_lane_u32(cmp_low, 0) != 0 {
+                mask |= 1 << 0;
+            }
+            if vgetq_lane_u32(cmp_low, 1) != 0 {
+                mask |= 1 << 1;
+            }
+            if vgetq_lane_u32(cmp_low, 2) != 0 {
+                mask |= 1 << 2;
+            }
+            if vgetq_lane_u32(cmp_low, 3) != 0 {
+                mask |= 1 << 3;
+            }
+            if vgetq_lane_u32(cmp_high, 0) != 0 {
+                mask |= 1 << 4;
+            }
+            if vgetq_lane_u32(cmp_high, 1) != 0 {
+                mask |= 1 << 5;
+            }
+            if vgetq_lane_u32(cmp_high, 2) != 0 {
+                mask |= 1 << 6;
+            }
+            if vgetq_lane_u32(cmp_high, 3) != 0 {
+                mask |= 1 << 7;
+            }
+
+            mask & sibling_mask
+        }
+    }
+
+    // Fallback scalar implementation for platforms without SIMD support
+    #[cfg(all(
+        feature = "simd",
+        not(all(target_arch = "x86_64", target_feature = "avx2")),
+        not(all(target_arch = "aarch64", target_feature = "neon"))
+    ))]
+    #[inline(always)]
+    fn simd_prune_block_f64(rd_values: &[f64; 8], max_dist: f64, sibling_mask: u8) -> u8 {
+        let mut mask = 0u8;
+        for i in 0..8 {
+            if rd_values[i] <= max_dist {
+                mask |= 1 << i;
+            }
+        }
+        mask & sibling_mask
+    }
+
+    #[cfg(all(
+        feature = "simd",
+        not(all(target_arch = "x86_64", target_feature = "avx2")),
+        not(all(target_arch = "aarch64", target_feature = "neon"))
+    ))]
+    #[inline(always)]
+    fn simd_prune_block_f32(rd_values: &[f32; 8], max_dist: f32, sibling_mask: u8) -> u8 {
+        let mut mask = 0u8;
+        for i in 0..8 {
+            if rd_values[i] <= max_dist {
+                mask |= 1 << i;
+            }
+        }
+        mask & sibling_mask
     }
 }

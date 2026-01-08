@@ -360,7 +360,10 @@ pub trait DistanceMetricUnified<A: Copy, const K: usize> {
     /// Returns an 8-bit mask where bit i is set if child i should be explored during backtracking.
     ///
     /// Default implementation panics - only implemented for metrics with SIMD support.
-    #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+    #[cfg(any(
+        all(target_arch = "x86_64", target_feature = "avx2"),
+        target_arch = "aarch64"
+    ))]
     #[allow(unused_variables)]
     fn simd_backtrack_check_block3_f64_avx2(
         query_wide: Self::Output,
@@ -388,7 +391,10 @@ pub trait DistanceMetricUnified<A: Copy, const K: usize> {
     }
 
     /// SIMD distance check for block3 traversal with f32 pivots (AVX2).
-    #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+    #[cfg(any(
+        all(target_arch = "x86_64", target_feature = "avx2"),
+        target_arch = "aarch64"
+    ))]
     #[allow(unused_variables)]
     fn simd_backtrack_check_block3_f32_avx2(
         query_wide: Self::Output,
@@ -402,7 +408,10 @@ pub trait DistanceMetricUnified<A: Copy, const K: usize> {
     }
 
     /// SIMD distance check for block4 traversal with f64 pivots (AVX2).
-    #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+    #[cfg(any(
+        all(target_arch = "x86_64", target_feature = "avx2"),
+        target_arch = "aarch64"
+    ))]
     #[allow(unused_variables)]
     fn simd_backtrack_check_block4_f64_avx2(
         query_wide: Self::Output,
@@ -430,7 +439,10 @@ pub trait DistanceMetricUnified<A: Copy, const K: usize> {
     }
 
     /// SIMD distance check for block4 traversal with f32 pivots (AVX2).
-    #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+    #[cfg(any(
+        all(target_arch = "x86_64", target_feature = "avx2"),
+        target_arch = "aarch64"
+    ))]
     #[allow(unused_variables)]
     fn simd_backtrack_check_block4_f32_avx2(
         query_wide: Self::Output,
@@ -579,7 +591,10 @@ where
         d * d
     }
 
-    #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+    #[cfg(any(
+        all(target_arch = "x86_64", target_feature = "avx2"),
+        target_arch = "aarch64"
+    ))]
     #[inline(always)]
     fn simd_backtrack_check_block3_f64_avx2(
         query_wide: Self::Output,
@@ -592,6 +607,7 @@ where
     where
         Self::Output: core::ops::Sub<Output = Self::Output> + PartialOrd,
     {
+        #[cfg(target_arch = "x86_64")]
         unsafe {
             use std::arch::x86_64::*;
 
@@ -641,9 +657,231 @@ where
 
             mask
         }
+
+        #[cfg(target_arch = "aarch64")]
+        unsafe {
+            use std::arch::aarch64::*;
+
+            // Load 8 f64 pivots using 4 NEON 128-bit vectors
+            let ptr = pivots_ptr.add(cache_line_base * 8) as *const f64;
+            let pivots_0 = vld1q_f64(ptr);
+            let pivots_1 = vld1q_f64(ptr.add(2));
+            let pivots_2 = vld1q_f64(ptr.add(4));
+            let pivots_3 = vld1q_f64(ptr.add(6));
+
+            // Broadcast scalars
+            let query_f64: f64 = std::mem::transmute_copy(&query_wide);
+            let old_off_f64: f64 = std::mem::transmute_copy(&old_off);
+            let rd_f64: f64 = std::mem::transmute_copy(&rd);
+            let best_dist_f64: f64 = std::mem::transmute_copy(&best_dist);
+
+            let query_vec = vdupq_n_f64(query_f64);
+            let old_off_vec = vdupq_n_f64(old_off_f64);
+            let rd_vec = vdupq_n_f64(rd_f64);
+            let best_dist_vec = vdupq_n_f64(best_dist_f64);
+
+            // Compute new_off = |query - pivot| for each pivot
+            let diff_0 = vsubq_f64(query_vec, pivots_0);
+            let diff_1 = vsubq_f64(query_vec, pivots_1);
+            let diff_2 = vsubq_f64(query_vec, pivots_2);
+            let diff_3 = vsubq_f64(query_vec, pivots_3);
+
+            let abs_diff_0 = vabsq_f64(diff_0);
+            let abs_diff_1 = vabsq_f64(diff_1);
+            let abs_diff_2 = vabsq_f64(diff_2);
+            let abs_diff_3 = vabsq_f64(diff_3);
+
+            // new_off² (SquaredEuclidean dist1)
+            let new_off_sq_0 = vmulq_f64(abs_diff_0, abs_diff_0);
+            let new_off_sq_1 = vmulq_f64(abs_diff_1, abs_diff_1);
+            let new_off_sq_2 = vmulq_f64(abs_diff_2, abs_diff_2);
+            let new_off_sq_3 = vmulq_f64(abs_diff_3, abs_diff_3);
+
+            // old_off²
+            let old_off_sq_vec = vmulq_f64(old_off_vec, old_off_vec);
+
+            // rd_far = rd + (new_off² - old_off²)
+            let delta_0 = vsubq_f64(new_off_sq_0, old_off_sq_vec);
+            let delta_1 = vsubq_f64(new_off_sq_1, old_off_sq_vec);
+            let delta_2 = vsubq_f64(new_off_sq_2, old_off_sq_vec);
+            let delta_3 = vsubq_f64(new_off_sq_3, old_off_sq_vec);
+
+            let rd_far_0 = vaddq_f64(rd_vec, delta_0);
+            let rd_far_1 = vaddq_f64(rd_vec, delta_1);
+            let rd_far_2 = vaddq_f64(rd_vec, delta_2);
+            let rd_far_3 = vaddq_f64(rd_vec, delta_3);
+
+            // Compare rd_far <= best_dist
+            let cmp_0 = vcleq_f64(rd_far_0, best_dist_vec);
+            let cmp_1 = vcleq_f64(rd_far_1, best_dist_vec);
+            let cmp_2 = vcleq_f64(rd_far_2, best_dist_vec);
+            let cmp_3 = vcleq_f64(rd_far_3, best_dist_vec);
+
+            // Extract masks
+            let mut mask = 0u8;
+            if vgetq_lane_u64(cmp_0, 0) != 0 {
+                mask |= 1 << 0;
+            }
+            if vgetq_lane_u64(cmp_0, 1) != 0 {
+                mask |= 1 << 1;
+            }
+            if vgetq_lane_u64(cmp_1, 0) != 0 {
+                mask |= 1 << 2;
+            }
+            if vgetq_lane_u64(cmp_1, 1) != 0 {
+                mask |= 1 << 3;
+            }
+            if vgetq_lane_u64(cmp_2, 0) != 0 {
+                mask |= 1 << 4;
+            }
+            if vgetq_lane_u64(cmp_2, 1) != 0 {
+                mask |= 1 << 5;
+            }
+            if vgetq_lane_u64(cmp_3, 0) != 0 {
+                mask |= 1 << 6;
+            }
+            if vgetq_lane_u64(cmp_3, 1) != 0 {
+                mask |= 1 << 7;
+            }
+
+            mask
+        }
     }
 
-    #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+    #[cfg(any(
+        all(target_arch = "x86_64", target_feature = "avx2"),
+        target_arch = "aarch64"
+    ))]
+    #[inline(always)]
+    fn simd_backtrack_check_block3_f32_avx2(
+        query_wide: Self::Output,
+        pivots_ptr: *const u8,
+        cache_line_base: usize,
+        old_off: Self::Output,
+        rd: Self::Output,
+        best_dist: Self::Output,
+    ) -> u8
+    where
+        Self::Output: core::ops::Sub<Output = Self::Output> + PartialOrd,
+    {
+        #[cfg(target_arch = "x86_64")]
+        unsafe {
+            use std::arch::x86_64::*;
+
+            // Load 8 f32 pivots using one AVX2 256-bit vector
+            let ptr = pivots_ptr.add(cache_line_base * 4) as *const f32;
+            let pivots = _mm256_loadu_ps(ptr);
+
+            // Broadcast query, old_off, rd, best_dist
+            let query_vec = _mm256_set1_ps(std::mem::transmute_copy(&query_wide));
+            let old_off_vec = _mm256_set1_ps(std::mem::transmute_copy(&old_off));
+            let rd_vec = _mm256_set1_ps(std::mem::transmute_copy(&rd));
+            let best_dist_vec = _mm256_set1_ps(std::mem::transmute_copy(&best_dist));
+
+            // Compute new_off = |query - pivot| for each pivot
+            let diff = _mm256_sub_ps(query_vec, pivots);
+            let abs_diff = _mm256_andnot_ps(_mm256_set1_ps(-0.0), diff);
+
+            // new_off² (SquaredEuclidean dist1)
+            let new_off_sq = _mm256_mul_ps(abs_diff, abs_diff);
+
+            // old_off²
+            let old_off_sq_vec = _mm256_mul_ps(old_off_vec, old_off_vec);
+
+            // rd_far = rd + (new_off² - old_off²)
+            let delta = _mm256_sub_ps(new_off_sq, old_off_sq_vec);
+            let rd_far = _mm256_add_ps(rd_vec, delta);
+
+            // Compare rd_far <= best_dist
+            let cmp = _mm256_cmp_ps(rd_far, best_dist_vec, _CMP_LE_OQ);
+
+            // Extract mask
+            let mask = _mm256_movemask_ps(cmp) as u8;
+
+            mask
+        }
+
+        #[cfg(target_arch = "aarch64")]
+        unsafe {
+            use std::arch::aarch64::*;
+
+            // Load 8 f32 pivots using 2 NEON 128-bit vectors
+            let ptr = pivots_ptr.add(cache_line_base * 4) as *const f32;
+            let pivots_0 = vld1q_f32(ptr);
+            let pivots_1 = vld1q_f32(ptr.add(4));
+
+            // Extract scalar values
+            let query_f32: f32 = std::mem::transmute_copy(&query_wide);
+            let old_off_f32: f32 = std::mem::transmute_copy(&old_off);
+            let rd_f32: f32 = std::mem::transmute_copy(&rd);
+            let best_dist_f32: f32 = std::mem::transmute_copy(&best_dist);
+
+            // Broadcast to NEON vectors
+            let query_vec = vdupq_n_f32(query_f32);
+            let old_off_vec = vdupq_n_f32(old_off_f32);
+            let rd_vec = vdupq_n_f32(rd_f32);
+            let best_dist_vec = vdupq_n_f32(best_dist_f32);
+
+            // Compute new_off = |query - pivot|
+            let diff_0 = vsubq_f32(query_vec, pivots_0);
+            let diff_1 = vsubq_f32(query_vec, pivots_1);
+
+            let abs_diff_0 = vabsq_f32(diff_0);
+            let abs_diff_1 = vabsq_f32(diff_1);
+
+            // new_off² (SquaredEuclidean)
+            let new_off_sq_0 = vmulq_f32(abs_diff_0, abs_diff_0);
+            let new_off_sq_1 = vmulq_f32(abs_diff_1, abs_diff_1);
+
+            // old_off²
+            let old_off_sq_vec = vmulq_f32(old_off_vec, old_off_vec);
+
+            // rd_far = rd + (new_off² - old_off²)
+            let delta_0 = vsubq_f32(new_off_sq_0, old_off_sq_vec);
+            let delta_1 = vsubq_f32(new_off_sq_1, old_off_sq_vec);
+
+            let rd_far_0 = vaddq_f32(rd_vec, delta_0);
+            let rd_far_1 = vaddq_f32(rd_vec, delta_1);
+
+            // Compare rd_far <= best_dist (returns uint32x4_t)
+            let cmp_0 = vcleq_f32(rd_far_0, best_dist_vec);
+            let cmp_1 = vcleq_f32(rd_far_1, best_dist_vec);
+
+            // Extract mask bits (8 total)
+            let mut mask = 0u8;
+            if vgetq_lane_u32(cmp_0, 0) != 0 {
+                mask |= 1 << 0;
+            }
+            if vgetq_lane_u32(cmp_0, 1) != 0 {
+                mask |= 1 << 1;
+            }
+            if vgetq_lane_u32(cmp_0, 2) != 0 {
+                mask |= 1 << 2;
+            }
+            if vgetq_lane_u32(cmp_0, 3) != 0 {
+                mask |= 1 << 3;
+            }
+            if vgetq_lane_u32(cmp_1, 0) != 0 {
+                mask |= 1 << 4;
+            }
+            if vgetq_lane_u32(cmp_1, 1) != 0 {
+                mask |= 1 << 5;
+            }
+            if vgetq_lane_u32(cmp_1, 2) != 0 {
+                mask |= 1 << 6;
+            }
+            if vgetq_lane_u32(cmp_1, 3) != 0 {
+                mask |= 1 << 7;
+            }
+
+            mask
+        }
+    }
+
+    #[cfg(any(
+        all(target_arch = "x86_64", target_feature = "avx2"),
+        target_arch = "aarch64"
+    ))]
     #[inline(always)]
     fn simd_backtrack_check_block4_f64_avx2(
         query_wide: Self::Output,
@@ -656,6 +894,7 @@ where
     where
         Self::Output: core::ops::Sub<Output = Self::Output> + PartialOrd,
     {
+        #[cfg(target_arch = "x86_64")]
         unsafe {
             use std::arch::x86_64::*;
 
@@ -716,9 +955,154 @@ where
 
             mask
         }
+
+        #[cfg(target_arch = "aarch64")]
+        unsafe {
+            use std::arch::aarch64::*;
+
+            // Load 16 f64 pivots using 8 NEON 128-bit vectors (2 f64 per vector)
+            let ptr = pivots_ptr.add(cache_line_base * 8) as *const f64;
+            let pivots_0 = vld1q_f64(ptr);
+            let pivots_1 = vld1q_f64(ptr.add(2));
+            let pivots_2 = vld1q_f64(ptr.add(4));
+            let pivots_3 = vld1q_f64(ptr.add(6));
+            let pivots_4 = vld1q_f64(ptr.add(8));
+            let pivots_5 = vld1q_f64(ptr.add(10));
+            let pivots_6 = vld1q_f64(ptr.add(12));
+            let pivots_7 = vld1q_f64(ptr.add(14));
+
+            // Extract scalar values
+            let query_f64: f64 = std::mem::transmute_copy(&query_wide);
+            let old_off_f64: f64 = std::mem::transmute_copy(&old_off);
+            let rd_f64: f64 = std::mem::transmute_copy(&rd);
+            let best_dist_f64: f64 = std::mem::transmute_copy(&best_dist);
+
+            // Broadcast to NEON vectors
+            let query_vec = vdupq_n_f64(query_f64);
+            let old_off_vec = vdupq_n_f64(old_off_f64);
+            let rd_vec = vdupq_n_f64(rd_f64);
+            let best_dist_vec = vdupq_n_f64(best_dist_f64);
+
+            // Compute new_off = |query - pivot|
+            let diff_0 = vsubq_f64(query_vec, pivots_0);
+            let diff_1 = vsubq_f64(query_vec, pivots_1);
+            let diff_2 = vsubq_f64(query_vec, pivots_2);
+            let diff_3 = vsubq_f64(query_vec, pivots_3);
+            let diff_4 = vsubq_f64(query_vec, pivots_4);
+            let diff_5 = vsubq_f64(query_vec, pivots_5);
+            let diff_6 = vsubq_f64(query_vec, pivots_6);
+            let diff_7 = vsubq_f64(query_vec, pivots_7);
+
+            let abs_diff_0 = vabsq_f64(diff_0);
+            let abs_diff_1 = vabsq_f64(diff_1);
+            let abs_diff_2 = vabsq_f64(diff_2);
+            let abs_diff_3 = vabsq_f64(diff_3);
+            let abs_diff_4 = vabsq_f64(diff_4);
+            let abs_diff_5 = vabsq_f64(diff_5);
+            let abs_diff_6 = vabsq_f64(diff_6);
+            let abs_diff_7 = vabsq_f64(diff_7);
+
+            // new_off² (SquaredEuclidean)
+            let new_off_sq_0 = vmulq_f64(abs_diff_0, abs_diff_0);
+            let new_off_sq_1 = vmulq_f64(abs_diff_1, abs_diff_1);
+            let new_off_sq_2 = vmulq_f64(abs_diff_2, abs_diff_2);
+            let new_off_sq_3 = vmulq_f64(abs_diff_3, abs_diff_3);
+            let new_off_sq_4 = vmulq_f64(abs_diff_4, abs_diff_4);
+            let new_off_sq_5 = vmulq_f64(abs_diff_5, abs_diff_5);
+            let new_off_sq_6 = vmulq_f64(abs_diff_6, abs_diff_6);
+            let new_off_sq_7 = vmulq_f64(abs_diff_7, abs_diff_7);
+
+            // old_off²
+            let old_off_sq_vec = vmulq_f64(old_off_vec, old_off_vec);
+
+            // rd_far = rd + (new_off² - old_off²)
+            let delta_0 = vsubq_f64(new_off_sq_0, old_off_sq_vec);
+            let delta_1 = vsubq_f64(new_off_sq_1, old_off_sq_vec);
+            let delta_2 = vsubq_f64(new_off_sq_2, old_off_sq_vec);
+            let delta_3 = vsubq_f64(new_off_sq_3, old_off_sq_vec);
+            let delta_4 = vsubq_f64(new_off_sq_4, old_off_sq_vec);
+            let delta_5 = vsubq_f64(new_off_sq_5, old_off_sq_vec);
+            let delta_6 = vsubq_f64(new_off_sq_6, old_off_sq_vec);
+            let delta_7 = vsubq_f64(new_off_sq_7, old_off_sq_vec);
+
+            let rd_far_0 = vaddq_f64(rd_vec, delta_0);
+            let rd_far_1 = vaddq_f64(rd_vec, delta_1);
+            let rd_far_2 = vaddq_f64(rd_vec, delta_2);
+            let rd_far_3 = vaddq_f64(rd_vec, delta_3);
+            let rd_far_4 = vaddq_f64(rd_vec, delta_4);
+            let rd_far_5 = vaddq_f64(rd_vec, delta_5);
+            let rd_far_6 = vaddq_f64(rd_vec, delta_6);
+            let rd_far_7 = vaddq_f64(rd_vec, delta_7);
+
+            // Compare rd_far <= best_dist (returns uint64x2_t)
+            let cmp_0 = vcleq_f64(rd_far_0, best_dist_vec);
+            let cmp_1 = vcleq_f64(rd_far_1, best_dist_vec);
+            let cmp_2 = vcleq_f64(rd_far_2, best_dist_vec);
+            let cmp_3 = vcleq_f64(rd_far_3, best_dist_vec);
+            let cmp_4 = vcleq_f64(rd_far_4, best_dist_vec);
+            let cmp_5 = vcleq_f64(rd_far_5, best_dist_vec);
+            let cmp_6 = vcleq_f64(rd_far_6, best_dist_vec);
+            let cmp_7 = vcleq_f64(rd_far_7, best_dist_vec);
+
+            // Extract mask bits (16 total)
+            let mut mask = 0u16;
+            if vgetq_lane_u64(cmp_0, 0) != 0 {
+                mask |= 1 << 0;
+            }
+            if vgetq_lane_u64(cmp_0, 1) != 0 {
+                mask |= 1 << 1;
+            }
+            if vgetq_lane_u64(cmp_1, 0) != 0 {
+                mask |= 1 << 2;
+            }
+            if vgetq_lane_u64(cmp_1, 1) != 0 {
+                mask |= 1 << 3;
+            }
+            if vgetq_lane_u64(cmp_2, 0) != 0 {
+                mask |= 1 << 4;
+            }
+            if vgetq_lane_u64(cmp_2, 1) != 0 {
+                mask |= 1 << 5;
+            }
+            if vgetq_lane_u64(cmp_3, 0) != 0 {
+                mask |= 1 << 6;
+            }
+            if vgetq_lane_u64(cmp_3, 1) != 0 {
+                mask |= 1 << 7;
+            }
+            if vgetq_lane_u64(cmp_4, 0) != 0 {
+                mask |= 1 << 8;
+            }
+            if vgetq_lane_u64(cmp_4, 1) != 0 {
+                mask |= 1 << 9;
+            }
+            if vgetq_lane_u64(cmp_5, 0) != 0 {
+                mask |= 1 << 10;
+            }
+            if vgetq_lane_u64(cmp_5, 1) != 0 {
+                mask |= 1 << 11;
+            }
+            if vgetq_lane_u64(cmp_6, 0) != 0 {
+                mask |= 1 << 12;
+            }
+            if vgetq_lane_u64(cmp_6, 1) != 0 {
+                mask |= 1 << 13;
+            }
+            if vgetq_lane_u64(cmp_7, 0) != 0 {
+                mask |= 1 << 14;
+            }
+            if vgetq_lane_u64(cmp_7, 1) != 0 {
+                mask |= 1 << 15;
+            }
+
+            mask
+        }
     }
 
-    #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+    #[cfg(any(
+        all(target_arch = "x86_64", target_feature = "avx2"),
+        target_arch = "aarch64"
+    ))]
     #[inline(always)]
     fn simd_backtrack_check_block4_f32_avx2(
         query_wide: Self::Output,
@@ -731,6 +1115,7 @@ where
     where
         Self::Output: core::ops::Sub<Output = Self::Output> + PartialOrd,
     {
+        #[cfg(target_arch = "x86_64")]
         unsafe {
             use std::arch::x86_64::*;
 
@@ -772,6 +1157,120 @@ where
             let mask_0 = _mm256_movemask_ps(cmp_0) as u16;
             let mask_1 = _mm256_movemask_ps(cmp_1) as u16;
             let mask = mask_0 | (mask_1 << 8);
+
+            mask
+        }
+
+        #[cfg(target_arch = "aarch64")]
+        unsafe {
+            use std::arch::aarch64::*;
+
+            // Load 16 f32 pivots using 4 NEON 128-bit vectors (4 f32 per vector)
+            let ptr = pivots_ptr.add(cache_line_base * 4) as *const f32;
+            let pivots_0 = vld1q_f32(ptr);
+            let pivots_1 = vld1q_f32(ptr.add(4));
+            let pivots_2 = vld1q_f32(ptr.add(8));
+            let pivots_3 = vld1q_f32(ptr.add(12));
+
+            // Extract scalar values
+            let query_f32: f32 = std::mem::transmute_copy(&query_wide);
+            let old_off_f32: f32 = std::mem::transmute_copy(&old_off);
+            let rd_f32: f32 = std::mem::transmute_copy(&rd);
+            let best_dist_f32: f32 = std::mem::transmute_copy(&best_dist);
+
+            // Broadcast to NEON vectors
+            let query_vec = vdupq_n_f32(query_f32);
+            let old_off_vec = vdupq_n_f32(old_off_f32);
+            let rd_vec = vdupq_n_f32(rd_f32);
+            let best_dist_vec = vdupq_n_f32(best_dist_f32);
+
+            // Compute new_off = |query - pivot|
+            let diff_0 = vsubq_f32(query_vec, pivots_0);
+            let diff_1 = vsubq_f32(query_vec, pivots_1);
+            let diff_2 = vsubq_f32(query_vec, pivots_2);
+            let diff_3 = vsubq_f32(query_vec, pivots_3);
+
+            let abs_diff_0 = vabsq_f32(diff_0);
+            let abs_diff_1 = vabsq_f32(diff_1);
+            let abs_diff_2 = vabsq_f32(diff_2);
+            let abs_diff_3 = vabsq_f32(diff_3);
+
+            // new_off² (SquaredEuclidean)
+            let new_off_sq_0 = vmulq_f32(abs_diff_0, abs_diff_0);
+            let new_off_sq_1 = vmulq_f32(abs_diff_1, abs_diff_1);
+            let new_off_sq_2 = vmulq_f32(abs_diff_2, abs_diff_2);
+            let new_off_sq_3 = vmulq_f32(abs_diff_3, abs_diff_3);
+
+            // old_off²
+            let old_off_sq_vec = vmulq_f32(old_off_vec, old_off_vec);
+
+            // rd_far = rd + (new_off² - old_off²)
+            let delta_0 = vsubq_f32(new_off_sq_0, old_off_sq_vec);
+            let delta_1 = vsubq_f32(new_off_sq_1, old_off_sq_vec);
+            let delta_2 = vsubq_f32(new_off_sq_2, old_off_sq_vec);
+            let delta_3 = vsubq_f32(new_off_sq_3, old_off_sq_vec);
+
+            let rd_far_0 = vaddq_f32(rd_vec, delta_0);
+            let rd_far_1 = vaddq_f32(rd_vec, delta_1);
+            let rd_far_2 = vaddq_f32(rd_vec, delta_2);
+            let rd_far_3 = vaddq_f32(rd_vec, delta_3);
+
+            // Compare rd_far <= best_dist (returns uint32x4_t)
+            let cmp_0 = vcleq_f32(rd_far_0, best_dist_vec);
+            let cmp_1 = vcleq_f32(rd_far_1, best_dist_vec);
+            let cmp_2 = vcleq_f32(rd_far_2, best_dist_vec);
+            let cmp_3 = vcleq_f32(rd_far_3, best_dist_vec);
+
+            // Extract mask bits (16 total)
+            let mut mask = 0u16;
+            if vgetq_lane_u32(cmp_0, 0) != 0 {
+                mask |= 1 << 0;
+            }
+            if vgetq_lane_u32(cmp_0, 1) != 0 {
+                mask |= 1 << 1;
+            }
+            if vgetq_lane_u32(cmp_0, 2) != 0 {
+                mask |= 1 << 2;
+            }
+            if vgetq_lane_u32(cmp_0, 3) != 0 {
+                mask |= 1 << 3;
+            }
+            if vgetq_lane_u32(cmp_1, 0) != 0 {
+                mask |= 1 << 4;
+            }
+            if vgetq_lane_u32(cmp_1, 1) != 0 {
+                mask |= 1 << 5;
+            }
+            if vgetq_lane_u32(cmp_1, 2) != 0 {
+                mask |= 1 << 6;
+            }
+            if vgetq_lane_u32(cmp_1, 3) != 0 {
+                mask |= 1 << 7;
+            }
+            if vgetq_lane_u32(cmp_2, 0) != 0 {
+                mask |= 1 << 8;
+            }
+            if vgetq_lane_u32(cmp_2, 1) != 0 {
+                mask |= 1 << 9;
+            }
+            if vgetq_lane_u32(cmp_2, 2) != 0 {
+                mask |= 1 << 10;
+            }
+            if vgetq_lane_u32(cmp_2, 3) != 0 {
+                mask |= 1 << 11;
+            }
+            if vgetq_lane_u32(cmp_3, 0) != 0 {
+                mask |= 1 << 12;
+            }
+            if vgetq_lane_u32(cmp_3, 1) != 0 {
+                mask |= 1 << 13;
+            }
+            if vgetq_lane_u32(cmp_3, 2) != 0 {
+                mask |= 1 << 14;
+            }
+            if vgetq_lane_u32(cmp_3, 3) != 0 {
+                mask |= 1 << 15;
+            }
 
             mask
         }

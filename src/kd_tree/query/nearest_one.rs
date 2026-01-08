@@ -304,7 +304,7 @@ mod tests {
 
     #[test]
     #[cfg(feature = "simd")]
-    #[cfg(target_arch = "x86_64")]
+    // #[cfg(target_arch = "x86_64")]
     fn v6_query_nearest_one_donnelly_marker_simd_f64() {
         use crate::stem_strategies::{Block3, DonnellyMarkerPf, DonnellyMarkerSimd};
 
@@ -365,7 +365,8 @@ mod tests {
             })
             .collect();
 
-        for (i, query_point) in query_points.iter().enumerate() {//.skip(1) {
+        for (i, query_point) in query_points.iter().enumerate() {
+            //.skip(1) {
             tracing::debug!("Query point: #{i} ({query_point:?})");
 
             let expected = linear_search(&points, query_point);
@@ -393,7 +394,7 @@ mod tests {
 
     #[test]
     #[cfg(feature = "simd")]
-    #[cfg(target_arch = "x86_64")]
+    // #[cfg(target_arch = "x86_64")]
     fn v6_query_nearest_one_donnelly_marker_simd_f32() {
         use crate::stem_strategies::{Block4, DonnellyMarkerSimd};
 

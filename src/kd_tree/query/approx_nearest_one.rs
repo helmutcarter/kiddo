@@ -467,7 +467,7 @@ mod tests {
 
     #[test]
     #[cfg(feature = "simd")]
-    #[cfg(target_arch = "x86_64")]
+    // #[cfg(target_arch = "x86_64")]
     fn v6_approx_nearest_one_donnelly_marker_simd_f64() {
         use crate::stem_strategies::Block3;
 
@@ -534,7 +534,7 @@ mod tests {
 
     #[test]
     #[cfg(feature = "simd")]
-    #[cfg(target_arch = "x86_64")]
+    // #[cfg(target_arch = "x86_64")]
     fn v6_approx_nearest_one_donnelly_marker_simd_f32() {
         use crate::stem_strategies::Block4;
 
