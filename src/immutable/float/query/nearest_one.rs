@@ -1,5 +1,4 @@
 use az::Cast;
-use std::num::NonZero;
 
 use crate::float::kdtree::Axis;
 use crate::float_leaf_slice::leaf_slice::{LeafSliceFloat, LeafSliceFloatChunk};
@@ -66,9 +65,62 @@ where
     ) -> NearestNeighbour<A, T>
     where
         D: DistanceMetric<A, K>,
-        T: std::hash::Hash + Eq,
     {
-        self.nearest_n_periodic::<D>(query, NonZero::new(1).unwrap(), box_size)[0]
+        box_size.iter().for_each(|axis_len| {
+            assert!(
+                *axis_len > A::zero(),
+                "periodic box sizes must be strictly positive"
+            );
+        });
+
+        let mut wrapped_query = *query;
+        let mut best = NearestNeighbour {
+            distance: A::infinity(),
+            item: T::default(),
+        };
+
+        self.nearest_one_periodic_recurse::<D>(
+            query,
+            box_size,
+            0,
+            &mut wrapped_query,
+            &mut best,
+        );
+
+        best
+    }
+
+    fn nearest_one_periodic_recurse<D>(
+        &self,
+        query: &[A; K],
+        box_size: &[A; K],
+        axis: usize,
+        wrapped_query: &mut [A; K],
+        best: &mut NearestNeighbour<A, T>,
+    ) where
+        D: DistanceMetric<A, K>,
+    {
+        if axis == K {
+            let candidate = self.nearest_one::<D>(wrapped_query);
+            if candidate.distance < best.distance {
+                *best = candidate;
+            }
+            return;
+        }
+
+        let original = query[axis];
+        let axis_len = box_size[axis];
+
+        wrapped_query[axis] = original - axis_len;
+        self.nearest_one_periodic_recurse::<D>(query, box_size, axis + 1, wrapped_query, best);
+
+        wrapped_query[axis] = original;
+        self.nearest_one_periodic_recurse::<D>(query, box_size, axis + 1, wrapped_query, best);
+
+        wrapped_query[axis] = original + axis_len;
+        self.nearest_one_periodic_recurse::<D>(query, box_size, axis + 1, wrapped_query, best);
+
+        wrapped_query[axis] = original;
     }
 }
 
