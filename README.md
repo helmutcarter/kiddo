@@ -65,7 +65,7 @@ assert_eq!(
 
 ## Periodic Boundary Conditions
 
-Kiddo supports periodic boundary conditions for float `KdTree` and `ImmutableKdTree` queries.
+Kiddo supports periodic boundary conditions (PBCs) for float `KdTree` and `ImmutableKdTree` queries. Currently, periodic queries have a considerable performance penalty (~100x) compared to non-periodic queries.
 
 Periodic queries take a `box_size` argument, where each entry is the period of one axis.
 
