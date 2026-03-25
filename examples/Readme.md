@@ -72,3 +72,11 @@ Deserialized gzipped bincode file back into a k-d tree (2.71 s)
 
 Nearest city to 52.5N, 1.9W: CityCsvRecord { name: "Aston", lat: 52.5, lng: -1.88333 }
 ```
+
+## Example 4: Periodic Boundary Conditions ([periodic-boundaries.rs](./periodic-boundaries.rs))
+
+Demonstrates periodic nearest-neighbour and radius queries on a mutable `KdTree` in a 2D unit box.
+
+## Example 5: Immutable Periodic Boundary Conditions ([immutable-periodic-boundaries.rs](./immutable-periodic-boundaries.rs))
+
+Demonstrates the same periodic query APIs on `ImmutableKdTree`.
